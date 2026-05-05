@@ -13,6 +13,7 @@ from typing import List, Dict, Any
 import json
 import math
 
+
 class Trader:
 
     CONFIG = {
@@ -24,7 +25,6 @@ class Trader:
             "SAFE_WIND": 50,
             "DESPERATE_SELL": 150000,
             "LIMIT": 10,
-            "MAX_WINDOW": 20,
             "WINDOW": 100,
             "ENTRY_Z": 2,
             "EXIT_Z": 1.2,
@@ -36,7 +36,6 @@ class Trader:
             "LIMIT": 10,
         },
         "OXYGEN": {
-            "MAX_WINDOW": 20,
             "LIMIT": 10,
             "WINDOW": 50,
             "ENTRY_Z": 2,
@@ -44,7 +43,6 @@ class Trader:
         },
         "GALAXY": {
             "LIMIT": 10,
-            "MAX_WINDOW": 20,
             "WINDOW": 30,
             "ENTRY_Z": 2,
             "EXIT_Z": 1.2,
@@ -56,7 +54,6 @@ class Trader:
             "SAFE_WIND": 50,
             "DESPERATE_SELL": 150000,
             "LIMIT": 10,
-            "MAX_WINDOW": 20,
             "WINDOW": 150,
             "ENTRY_Z": 2,
             "EXIT_Z": 1.2,
@@ -76,7 +73,6 @@ class Trader:
             "SAFE_WIND": 50,
             "DESPERATE_SELL": 150000,
             "LIMIT": 10,
-            "MAX_WINDOW": 20,
             "WINDOW": 30,
             "ENTRY_Z": 2,
             "EXIT_Z": 1,
@@ -88,7 +84,7 @@ class Trader:
         """Function implementing the wall_mid algorithm modified for prosperity4. Returns None if unable"""
         # MID_PRICE
         # Explanation: I implement Frankfurt's Wall Mid which is average of the two high-volume orders.
-        # However this year, commonly there are days without one of the big offers, so I just make it up by 
+        # However this year, commonly there are days without one of the big offers, so I just make it up by
         # adding/removing the average_spread when only one is present.
         #  When neither is present, i just use the previous price which is stored in traderData
         ask_wall = -1
@@ -114,7 +110,7 @@ class Trader:
     def get_middest_bid_ask(
         self, state: TradingState, product: str, current_orders: List[Order]
     ):
-        '''Receives a list of orders the strategy has done so far. It returns the highest bid and lowest ask, still on the market'''
+        """Receives a list of orders the strategy has done so far. It returns the highest bid and lowest ask, still on the market"""
         order_depth: OrderDepth = state.order_depths.get(product)
         highest_bid, highest_bid_volume = None, None
         lowest_ask, lowest_ask_volume = None, None
@@ -158,7 +154,7 @@ class Trader:
         """Trades single item by buying or selling everything with the goal of getting to the given position"""
         # An important detail is that the function doesnt allow you to lower your position when its positive, or increase
         # it when it is negative, unless you are specifically making it 0. This was done to make the mean_reverting_group code
-        # easier, so it doesnt constantly check what the positions are and if it should actually do trades. 
+        # easier, so it doesnt constantly check what the positions are and if it should actually do trades.
         order_depth: OrderDepth = state.order_depths[product]
         orders: List[Order] = []
         current_pos = state.position.get(product, 0)
@@ -268,8 +264,8 @@ class Trader:
             "TRANSLATOR_VOID_BLUE",
         ]
         # STRATEGY EXPLANATION
-        # The translator strategy is really dumb and risky. We observed a really flanky price movement of the translator. 
-        # Where it would go down a lot, then back up. To use it, we sell immediately to max position, and buy to 0 when the 
+        # The translator strategy is really dumb and risky. We observed a really flanky price movement of the translator.
+        # Where it would go down a lot, then back up. To use it, we sell immediately to max position, and buy to 0 when the
         # price gets more than buy_price + DIP_PRICE for an overall of 10 * DIP_PRICE profit.
         # Another distiction is that we added a 100k timestamp wait for the start selling, since day 4 had ended on a relatively
         # small price and we expected an increase in the price
@@ -353,7 +349,13 @@ class Trader:
         params = self.CONFIG[product]
 
         # STRATEGY EXPLANATION
-        # todo
+        # This strategy implements a mean-reversion z-score model on a group of products.
+        # At each step, it computes the mid-price for each product and sums them to form the group price.
+        # It maintains a rolling window of the group price over the last WINDOW steps, from which it calculates the rolling mean and standard deviation.
+        # The z-score is then computed as the deviation of the current group price from the rolling mean, normalized by the standard deviation.
+        # If the z-score exceeds ENTRY_Z, the strategy sells
+        # If the z-score is below -ENTRY_Z, the strategy buys=
+        # If positions are already open and the z-score reverts within [-EXIT_Z, EXIT_Z], the strategy closes positions
 
         for product in products:
             if product not in state.order_depths:
@@ -397,23 +399,8 @@ class Trader:
             elif holding and -exit_z <= z_score <= exit_z:
                 desired_volume = 0
 
-        min_vol = params["LIMIT"] + 10
-        max_vol = -params["LIMIT"] - 10
-        for name in products:
-            cur_limit = state.position.get(name, 0)
-            if cur_limit > max_vol:
-                max_vol = cur_limit
-            if cur_limit < min_vol:
-                min_vol = cur_limit
-        limit_range = max_vol - min_vol
-        if limit_range > params["MAX_WINDOW"]:
-            limit_range = params["MAX_WINDOW"]
-        max_allowed = int(max_vol + (params["MAX_WINDOW"] - limit_range) / 2)
-        if max_allowed > params["LIMIT"]:
-            max_allowed = params["LIMIT"]
-        min_allowed = int(min_vol - (params["MAX_WINDOW"] - limit_range) / 2)
-        if min_allowed < -params["LIMIT"]:
-            min_allowed = -params["LIMIT"]
+        max_allowed = params["LIMIT"]
+        min_allowed = -params["LIMIT"]
 
         orders: Dict[str, List[Order]] = {}
         if desired_volume is not None:
@@ -427,11 +414,33 @@ class Trader:
 
     def run(self, state: TradingState):
         """Extracts the traderData for the different assets. Calls their respective functions and merges the orders and the new tradeData"""
-        (t0_data,t1_data,t2_data,t3_data,t4_data,t5_data,t6_data,t7_data,t8_data,t9_data,) = ("", "", "", "", "", "", "", "", "", "")
+        (
+            t0_data,
+            t1_data,
+            t2_data,
+            t3_data,
+            t4_data,
+            t5_data,
+            t6_data,
+            t7_data,
+            t8_data,
+            t9_data,
+        ) = ("", "", "", "", "", "", "", "", "", "")
         if state.traderData:
             parts = state.traderData.split("\x1e")
             if len(parts) == 10:
-                (t0_data,t1_data,t2_data,t3_data,t4_data,t5_data,t6_data,t7_data,t8_data,t9_data,) = parts
+                (
+                    t0_data,
+                    t1_data,
+                    t2_data,
+                    t3_data,
+                    t4_data,
+                    t5_data,
+                    t6_data,
+                    t7_data,
+                    t8_data,
+                    t9_data,
+                ) = parts
 
         result = {}
 
