@@ -178,11 +178,12 @@ class Trader:
         orders: Dict[str, List[Order]] = {}
         params = self.CONFIG[product]
         # STRATEGY EXPLANATION
-        # This strategy is only used for a group of 4 robot products, which behaved extremely mean revertingly in the given data
         # It is really similar to the rounds 3 and 4 strategys. Except for using the price of an offer to determine the position
         # this strategy just uses the current wall_mid of the etf. After determining what position it wants to hold, it calls
         # the trade_to_position function for each asset, which does the actual trades.
         # Main details are still sell at + [GO_DEVIATION,GO_FULL] and buy at - [GO_DEVIATION,GO_FULL] and empty close to the
+        # This strategy is only used for a group of 4 robot products, which behaved extremely mean revertingly in the given data
+        # Unfortunately this pattern didn't resume very well on the actual day 5, and the strategy lost 2k pnl
         # average price
         sum_mid_price = 0
         for names in all_products:
@@ -356,6 +357,8 @@ class Trader:
         # If the z-score exceeds ENTRY_Z, the strategy sells
         # If the z-score is below -ENTRY_Z, the strategy buys=
         # If positions are already open and the z-score reverts within [-EXIT_Z, EXIT_Z], the strategy closes positions
+        # Overall this strategy contributed to around -10k PNL in total. We were too risky applying to products that weren't certain to work.
+        # On the contrast, the 2 products that analysis expected the strategy to perform well, contributed 10k PNL, while the others did the -20k part. 
 
         for product in products:
             if product not in state.order_depths:
